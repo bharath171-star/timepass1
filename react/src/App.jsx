@@ -1,293 +1,613 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, createContext, useContext } from "react";
 import axios from "axios";
 
-const App = () => {
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    phoneNumber: "",
-  });
-  const [isRegister, setIsRegister] = useState(true);
-  const [message, setMessage] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [errors, setErrors] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [dhoniImage, setDhoniImage] = useState("");
+// Firebase URLs
+const FIREBASE_USERS_URL = "https://teluguskillhub-32c09-default-rtdb.firebaseio.com/users.json";
+const FIREBASE_POLLS_URL = "https://teluguskillhub-32c09-default-rtdb.firebaseio.com/polls.json";
 
-  const FIREBASE_URL = "https://teluguskillhub-32c09-default-rtdb.firebaseio.com/users.json";
+// Context setup
+const ThemeContext = createContext();
+const AuthContext = createContext();
 
-  const dhoniImages = [
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Mahendra_Singh_Dhoni.jpg/800px-Mahendra_Singh_Dhoni.jpg",
-    "https://static.toiimg.com/thumb/msid-82112699,width-400,resizemode-4/82112699.jpg",
-    "https://images.indianexpress.com/2020/08/ms-dhoni-1200.jpg",
-    "https://www.cricbuzz.com/a/img/v1/600x400/i1/c244400/ms-dhoni-led-csk-to-their-fourth.jpg",
-    "https://www.hindustantimes.com/ht-img/img/2023/04/02/1600x900/ms_dhoni_csk_ipl2023_1680442579041_1680442579306_1680442579306.jpg"
-  ];
+// Utility functions
+const sanitizeEmail = (email) => email.replace(/[.@]/g, "_");
+const getLocalStorage = (key, defaultValue) => localStorage.getItem(key) || defaultValue;
 
-  useEffect(() => {
-    const savedEmail = localStorage.getItem("email");
-    const savedPassword = localStorage.getItem("password");
-    if (savedEmail && savedPassword) {
-      setFormData({ email: savedEmail, password: savedPassword, confirmPassword: "", phoneNumber: "" });
-      setRememberMe(true);
-    }
-  }, []);
+// Shared styles
+const getStyles = (theme) => ({
+  app: {
+    background: theme === "light" ? "#f9fafb" : "#222",
+    color: theme === "light" ? "#111" : "#eee",
+    minHeight: "100vh",
+    padding: "1rem",
+    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    transition: "all 0.3s ease",
+  },
+  box: {
+    background: theme === "light" ? "white" : "#333",
+    borderRadius: "10px",
+    padding: "1rem",
+    marginBottom: "1rem",
+    boxShadow: theme === "light" ? "0 0 8px rgba(0,0,0,0.1)" : "0 0 8px rgba(255,255,255,0.1)",
+  },
+  button: {
+    padding: "8px 14px",
+    margin: "0.2rem",
+    border: "none",
+    borderRadius: "8px",
+    background: "#3b82f6",
+    color: "white",
+    cursor: "pointer",
+    transition: "background 0.3s ease",
+  },
+  input: {
+    width: "100%",
+    padding: "8px",
+    marginBottom: "8px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+  },
+  message: (isSuccess) => ({
+    marginTop: 10,
+    color: isSuccess ? "green" : "red",
+    padding: "6px",
+    borderRadius: "4px",
+    background: isSuccess ? "rgba(0,255,0,0.1)" : "rgba(255,0,0,0.1)"
+  })
+});
 
-  const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
-    validateForm(e.target.name, e.target.value);
-  };
+// Message component
+const Message = ({ message }) => {
+  if (!message) return null;
+  const isSuccess = message.includes("successfully");
+  const theme = useContext(ThemeContext).theme;
+  const styles = getStyles(theme);
+  
+  return <div style={styles.message(isSuccess)}>{message}</div>;
+};
 
-  const validateForm = (fieldName, value) => {
-    let tempErrors = { ...errors };
-
-    if (fieldName === "email") {
-      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-      tempErrors.email = emailRegex.test(value) ? "" : "Invalid email format";
-    }
-
-    if (fieldName === "password") {
-      tempErrors.password = value.length >= 6 ? "" : "Password must be at least 6 characters";
-    }
-
-    if (fieldName === "confirmPassword") {
-      tempErrors.confirmPassword = value === formData.password ? "" : "Passwords do not match";
-    }
-
-    setErrors(tempErrors);
-  };
-
-  const handleRegister = async () => {
-    if (Object.values(errors).some((error) => error !== "")) {
-      setMessage("Please fix the errors before submitting.");
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setMessage("Passwords do not match.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await axios.get(FIREBASE_URL);
-      const users = response.data || {};
-      const exists = Object.values(users).some(user => user.email === formData.email);
-
-      if (exists) {
-        setMessage("Email already registered.");
-        setLoading(false);
-        return;
-      }
-
-      await axios.post(FIREBASE_URL, formData);
-      setMessage("Registered successfully!");
-
-      if (rememberMe) {
-        localStorage.setItem("email", formData.email);
-        localStorage.setItem("password", formData.password);
-      }
-
-      setFormData({ email: "", password: "", confirmPassword: "", phoneNumber: "" });
-      setLoading(false);
-    } catch (err) {
-      setMessage("Registration failed.");
-      setLoading(false);
-    }
-  };
-
-  const handleLogin = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get(FIREBASE_URL);
-      const users = response.data;
-
-      const found = Object.values(users || {}).find(
-        (user) =>
-          user.email === formData.email && user.password === formData.password
-      );
-
-      if (found) {
-        setMessage("Login successful!");
-        setFormData({ email: "", password: "", confirmPassword: "", phoneNumber: "" });
-
-        // Select a random Dhoni image
-        const randomIndex = Math.floor(Math.random() * dhoniImages.length);
-        setDhoniImage(dhoniImages[randomIndex]);
-
-        if (rememberMe) {
-          localStorage.setItem("email", formData.email);
-          localStorage.setItem("password", formData.password);
-        }
-
-        setLoggedIn(true);
-      } else {
-        setMessage("Invalid email or password.");
-      }
-      setLoading(false);
-    } catch (err) {
-      setMessage("Login failed.");
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (isRegister) {
-      handleRegister();
-    } else {
-      handleLogin();
-    }
-  };
-
-  const handleReset = () => {
-    setFormData({
-      email: "",
-      password: "",
-      confirmPassword: "",
-      phoneNumber: "",
-    });
-    setMessage("");
-    setErrors({ email: "", password: "", confirmPassword: "" });
-    setRememberMe(false);
-    setLoading(false);
+// Theme Provider Component
+function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState(() => getLocalStorage("pollsAppTheme", "light"));
+  
+  const toggleTheme = () => {
+    const newTheme = theme === "light" ? "dark" : "light";
+    setTheme(newTheme);
+    localStorage.setItem("pollsAppTheme", newTheme);
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
-        width: "100vw",
-        margin: 0,
-        padding: 0,
-        background: "#f3f4f6",
-        boxSizing: "border-box",
-      }}
-    >
-      {loggedIn ? (
-        <div style={{ textAlign: "center" }}>
-          <h2>Welcome!</h2>
-          {dhoniImage && (
-            <img
-              src={dhoniImage}
-              alt="MS Dhoni"
-              style={{
-                maxWidth: "100%",
-                borderRadius: "12px",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-              }}
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+// Auth Provider Component
+function AuthProvider({ children }) {
+  const [loggedInUser, setLoggedInUser] = useState(() => getLocalStorage("pollsAppUser", null));
+  
+  useEffect(() => {
+    loggedInUser 
+      ? localStorage.setItem("pollsAppUser", loggedInUser)
+      : localStorage.removeItem("pollsAppUser");
+  }, [loggedInUser]);
+
+  return (
+    <AuthContext.Provider value={{ loggedInUser, setLoggedInUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// Auth Form Component
+function AuthForm() {
+  const { setLoggedInUser } = useContext(AuthContext);
+  const { theme } = useContext(ThemeContext);
+  const styles = getStyles(theme);
+  
+  const [isRegister, setIsRegister] = useState(true);
+  const [formData, setFormData] = useState({ email: "", password: "", confirmPassword: "" });
+  const [errors, setErrors] = useState({});
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Form validation
+  const validate = (field, val) => {
+    setErrors(prev => {
+      const temp = { ...prev };
+      if (field === "email")
+        temp.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) ? "" : "Invalid Email";
+      else if (field === "password")
+        temp.password = val.length >= 6 ? "" : "Min 6 chars";
+      else if (field === "confirmPassword")
+        temp.confirmPassword = val === formData.password ? "" : "Passwords do not match";
+      return temp;
+    });
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    validate(name, value);
+  };
+
+  // Auth handlers
+  const register = async () => {
+    if (Object.values(errors).some(Boolean) || 
+        !formData.email || !formData.password || !formData.confirmPassword) {
+      setMessage("Please fix errors and fill all fields");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await axios.get(FIREBASE_USERS_URL);
+      const users = res.data || {};
+      if (Object.values(users).some(u => u.email === formData.email)) {
+        setMessage("Email already registered");
+        return;
+      }
+      
+      await axios.post(FIREBASE_USERS_URL, {
+        email: formData.email,
+        password: formData.password,
+        createdAt: new Date().toISOString()
+      });
+      setMessage("Registered successfully, please login");
+      setIsRegister(false);
+    } catch (error) {
+      console.error("Registration failed:", error);
+      setMessage("Registration failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async () => {
+    if (!formData.email || !formData.password) {
+      setMessage("Please fill email and password");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await axios.get(FIREBASE_USERS_URL);
+      const users = Object.values(res.data || {});
+      const user = users.find(
+        u => u.email === formData.email && u.password === formData.password
+      );
+      
+      if (user) {
+        setLoggedInUser(user.email);
+        setMessage("");
+      } else {
+        setMessage("Invalid credentials");
+      }
+    } catch (error) {
+      console.error("Login failed:", error);
+      setMessage("Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleForm = () => {
+    setIsRegister(prev => !prev);
+    setMessage("");
+    setErrors({});
+    setFormData({ email: "", password: "", confirmPassword: "" });
+  };
+
+  return (
+    <div style={{ maxWidth: 400, margin: "auto", ...styles.box }}>
+      <h2>{isRegister ? "Register" : "Login"}</h2>
+      <form onSubmit={(e) => { e.preventDefault(); isRegister ? register() : login(); }}>
+        <input
+          style={styles.input}
+          type="email"
+          placeholder="Email"
+          name="email"
+          value={formData.email}
+          onChange={handleChange}
+        />
+        {errors.email && <div style={{ color: "red" }}>{errors.email}</div>}
+
+        <input
+          style={styles.input}
+          type="password"
+          placeholder="Password"
+          name="password"
+          value={formData.password}
+          onChange={handleChange}
+        />
+        {errors.password && <div style={{ color: "red" }}>{errors.password}</div>}
+
+        {isRegister && (
+          <>
+            <input
+              style={styles.input}
+              type="password"
+              placeholder="Confirm Password"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
             />
-          )}
-          <button
-            onClick={() => {
-              setLoggedIn(false);
-              handleReset();
-            }}
-            style={{
-              marginTop: "20px",
-              padding: "10px 20px",
-              background: "#ef4444",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontWeight: "600",
-            }}
-          >
-            Logout
-          </button>
-        </div>
-      ) : (
-        <div
+            {errors.confirmPassword && <div style={{ color: "red" }}>{errors.confirmPassword}</div>}
+          </>
+        )}
+
+        <button type="submit" style={styles.button} disabled={loading}>
+          {loading ? "Please wait..." : isRegister ? "Register" : "Login"}
+        </button>
+      </form>
+      
+      <p style={{ marginTop: 10 }}>
+        {isRegister ? "Already have an account? " : "Don't have an account? "}
+        <button
           style={{
-            width: "100%",
-            maxWidth: "400px",
-            padding: "32px",
-            backgroundColor: "#fff",
-            borderRadius: "12px",
-            boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
-            boxSizing: "border-box",
+            ...styles.button,
+            background: "transparent",
+            color: theme === "light" ? "#3b82f6" : "#90cdf4",
+            padding: 0,
           }}
+          onClick={toggleForm}
         >
-          <h2 style={{ fontSize: "24px", fontWeight: "700", marginBottom: "20px", textAlign: "center" }}>
-            {isRegister ? "Register" : "Login"}
-          </h2>
+          {isRegister ? "Login" : "Register"}
+        </button>
+      </p>
+      
+      <Message message={message} />
+    </div>
+  );
+}
 
-          <form onSubmit={handleSubmit}>
-            <input type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginBottom: "16px", borderRadius: "8px", border: "1px solid #ccc", fontSize: "16px", boxSizing: "border-box" }} />
-            {errors.email && <span style={{ color: "red" }}>{errors.email}</span>}
+// CreatePollForm Component
+function CreatePollForm({ onPollCreated }) {
+  const { theme } = useContext(ThemeContext);
+  const { loggedInUser } = useContext(AuthContext);
+  const styles = getStyles(theme);
+  
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-            <div style={{ position: "relative" }}>
-              <input type={showPassword ? "text" : "password"} name="password" placeholder="Password" value={formData.password} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginBottom: "16px", borderRadius: "8px", border: "1px solid #ccc", fontSize: "16px", boxSizing: "border-box" }} />
-              {errors.password && <span style={{ color: "red" }}>{errors.password}</span>}
-              <span onClick={() => setShowPassword(!showPassword)} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: "#aaa" }}>
-                {showPassword ? "🙈" : "👁️"}
-              </span>
-            </div>
+  const handlePollOptionChange = (index, value) => {
+    setPollOptions(prev => prev.map((opt, i) => (i === index ? value : opt)));
+  };
 
-            {isRegister && (
-              <div style={{ position: "relative" }}>
-                <input type={showConfirmPassword ? "text" : "password"} name="confirmPassword" placeholder="Confirm Password" value={formData.confirmPassword} onChange={handleChange} required style={{ width: "100%", padding: "12px", marginBottom: "16px", borderRadius: "8px", border: "1px solid #ccc", fontSize: "16px", boxSizing: "border-box" }} />
-                {errors.confirmPassword && <span style={{ color: "red" }}>{errors.confirmPassword}</span>}
-                <span onClick={() => setShowConfirmPassword(!showConfirmPassword)} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: "#aaa" }}>
-                  {showConfirmPassword ? "🙈" : "👁️"}
-                </span>
-              </div>
-            )}
+  const createPoll = async () => {
+    if (!pollQuestion.trim()) {
+      setMessage("Poll question cannot be empty");
+      return;
+    }
+    if (pollOptions.some(opt => !opt.trim())) {
+      setMessage("Poll options cannot be empty");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await axios.post(FIREBASE_POLLS_URL, {
+        question: pollQuestion,
+        options: pollOptions.map(opt => opt.trim()),
+        createdBy: loggedInUser,
+        createdAt: new Date().toISOString(),
+        votes: {},
+      });
+      
+      setMessage("Poll created successfully!");
+      setPollQuestion("");
+      setPollOptions(["", ""]);
+      onPollCreated();
+      
+      setTimeout(() => setMessage(""), 3000);
+    } catch (error) {
+      console.error("Failed to create poll:", error);
+      setMessage("Failed to create poll");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-            {isRegister && (
-              <input type="tel" name="phoneNumber" placeholder="Phone Number (Optional)" value={formData.phoneNumber} onChange={handleChange} style={{ width: "100%", padding: "12px", marginBottom: "16px", borderRadius: "8px", border: "1px solid #ccc", fontSize: "16px", boxSizing: "border-box" }} />
-            )}
-
-            <label style={{ display: "block", marginBottom: "8px" }}>
-              <input type="checkbox" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} /> Remember Me
-            </label>
-
-            <button type="submit" style={{ width: "100%", padding: "12px", background: "#3b82f6", color: "white", fontWeight: "600", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "16px" }}>
-              {isRegister ? "Register" : "Login"}
+  return (
+    <div style={styles.box}>
+      <h3>Create a new Poll</h3>
+      <input
+        style={styles.input}
+        placeholder="Poll Question"
+        value={pollQuestion}
+        onChange={(e) => setPollQuestion(e.target.value)}
+      />
+      
+      <h4>Options</h4>
+      {pollOptions.map((option, i) => (
+        <div key={i} style={{ display: "flex", marginBottom: 6 }}>
+          <input
+            style={{ ...styles.input, flexGrow: 1 }}
+            value={option}
+            onChange={(e) => handlePollOptionChange(i, e.target.value)}
+            placeholder={`Option ${i + 1}`}
+          />
+          {pollOptions.length > 2 && (
+            <button
+              style={{...styles.button, background: "#ef4444", marginLeft: 6, padding: "6px 10px"}}
+              onClick={() => setPollOptions(prev => prev.filter((_, idx) => idx !== i))}
+              type="button"
+            >
+              ✕
             </button>
-
-            <button type="button" onClick={handleReset} style={{ width: "100%", padding: "12px", background: "#e5e7eb", color: "black", fontWeight: "600", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "16px", marginTop: "10px" }}>
-              Reset Form
-            </button>
-          </form>
-
-          {loading && (
-            <div style={{ textAlign: "center", marginTop: "20px" }}>
-              <div className="loader"></div>
-            </div>
           )}
+        </div>
+      ))}
+      
+      <button style={styles.button} onClick={() => setPollOptions(prev => [...prev, ""])}>
+        + Add Option
+      </button>
+      <br />
+      <button style={styles.button} onClick={createPoll} disabled={loading}>
+        {loading ? "Creating..." : "Create Poll"}
+      </button>
+      
+      <Message message={message} />
+    </div>
+  );
+}
 
-          <p style={{ marginTop: "20px", fontSize: "14px", textAlign: "center" }}>
-            {isRegister ? "Already have an account?" : "Don't have an account?"} {" "}
-            <button onClick={() => setIsRegister(!isRegister)} style={{ color: "#3b82f6", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontWeight: "500" }}>
-              {isRegister ? "Login" : "Register"}
+// PollItem Component
+function PollItem({ poll, onDelete, onVoted }) {
+  const { theme } = useContext(ThemeContext);
+  const { loggedInUser } = useContext(AuthContext);
+  const styles = getStyles(theme);
+  
+  const [message, setMessage] = useState("");
+  const [localPoll, setLocalPoll] = useState(poll);
+  
+  useEffect(() => setLocalPoll(poll), [poll]);
+  
+  const votes = localPoll.votes || {};
+  const userVote = votes[sanitizeEmail(loggedInUser)];
+  const votesCount = localPoll.options.map((_, idx) => 
+    Object.values(votes).filter(v => v === idx).length
+  );
+  const totalVotes = Object.keys(votes).length;
+
+  const vote = async (optionIndex) => {
+    try {
+      const pollUrl = `https://teluguskillhub-32c09-default-rtdb.firebaseio.com/polls/${localPoll.id}.json`;
+      const { data: currentPoll } = await axios.get(pollUrl);
+
+      if (!currentPoll) {
+        setMessage("Poll not found");
+        return;
+      }
+      
+      const voterKey = sanitizeEmail(loggedInUser);
+      if (currentPoll.votes?.[voterKey] !== undefined) {
+        setMessage("You have already voted");
+        return;
+      }
+
+      const updatedVotes = { ...(currentPoll.votes || {}), [voterKey]: optionIndex };
+      await axios.patch(pollUrl, { votes: updatedVotes });
+
+      setLocalPoll({ ...localPoll, votes: updatedVotes });
+      if (onVoted) onVoted(localPoll.id, updatedVotes);
+      
+      setMessage("✓ Vote recorded successfully!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (error) {
+      console.error("Vote error:", error);
+      setMessage("Failed to vote. Please try again.");
+    }
+  };
+
+  return (
+    <div style={{
+      ...styles.box,
+      marginBottom: "1.5rem",
+      border: localPoll.createdBy === loggedInUser ? "2px solid #3b82f6" : "1px solid #ccc",
+    }}>
+      <h4>{localPoll.question}</h4>
+      
+      {localPoll.options.map((option, idx) => {
+        const percent = totalVotes === 0 ? 0 : ((votesCount[idx] / totalVotes) * 100).toFixed(1);
+        return (
+          <div key={idx} style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              disabled={userVote !== undefined}
+              style={{
+                ...styles.button,
+                padding: "4px 10px",
+                fontSize: "0.9rem",
+                backgroundColor: userVote === idx ? "#10b981" : theme === "light" ? "#3b82f6" : "#2563eb",
+                cursor: userVote !== undefined ? "default" : "pointer",
+              }}
+              onClick={() => vote(idx)}
+            >
+              {option}
             </button>
-          </p>
+            <div style={{
+              flexGrow: 1,
+              height: 14,
+              background: theme === "light" ? "#e5e7eb" : "#4b5563",
+              borderRadius: 8,
+              overflow: "hidden",
+            }}>
+              <div style={{
+                width: `${percent}%`,
+                height: "100%",
+                backgroundColor: "#3b82f6",
+                transition: "width 0.5s",
+              }} />
+            </div>
+            <span style={{ minWidth: 40, textAlign: "right" }}>
+              {votesCount[idx]} ({percent}%)
+            </span>
+          </div>
+        );
+      })}
+      
+      <div style={{ 
+        marginTop: 8, 
+        fontSize: "0.9rem", 
+        color: theme === "light" ? "#555" : "#aaa",
+        display: "flex",
+        justifyContent: "space-between"
+      }}>
+        <span>Created by: {localPoll.createdBy}</span>
+        <span>{new Date(localPoll.createdAt).toLocaleDateString()}</span>
+      </div>
+      
+      {localPoll.createdBy === loggedInUser && (
+        <button
+          style={{ ...styles.button, background: "#ef4444", marginTop: 10 }}
+          onClick={() => onDelete(localPoll.id)}
+        >
+          Delete Poll
+        </button>
+      )}
+      
+      <Message message={message} />
+    </div>
+  );
+}
 
-          {message && (
-            <p style={{ marginTop: "16px", color: message.includes("success") ? "green" : "red", textAlign: "center", fontWeight: "500", opacity: 1, transition: "opacity 0.5s ease" }}>
-              {message}
-            </p>
-          )}
+// Main App Component
+function App() {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  const { loggedInUser, setLoggedInUser } = useContext(AuthContext);
+  const styles = getStyles(theme);
+  
+  const [polls, setPolls] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (loggedInUser) fetchPolls();
+  }, [loggedInUser]);
+
+  const fetchPolls = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(FIREBASE_POLLS_URL);
+      const data = res.data || {};
+      
+      const formattedPolls = Object.entries(data)
+        .map(([id, poll]) => ({ id, ...poll }))
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      
+      setPolls(formattedPolls);
+      setMessage("");
+    } catch (error) {
+      console.error("Failed to load polls:", error);
+      setMessage("Failed to load polls");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVote = (pollId, updatedVotes) => {
+    setPolls(polls => polls.map(poll => 
+      poll.id === pollId ? { ...poll, votes: updatedVotes } : poll
+    ));
+  };
+
+  const deletePoll = async (pollId) => {
+    const poll = polls.find(p => p.id === pollId);
+    if (!poll) {
+      setMessage("Poll not found");
+      return;
+    }
+    if (poll.createdBy !== loggedInUser) {
+      setMessage("You can only delete your own polls");
+      return;
+    }
+    
+    if (!window.confirm("Are you sure you want to delete this poll?")) return;
+    
+    try {
+      await axios.delete(`https://teluguskillhub-32c09-default-rtdb.firebaseio.com/polls/${pollId}.json`);
+      setPolls(prev => prev.filter(p => p.id !== pollId));
+      setMessage("Poll deleted successfully");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (error) {
+      console.error("Delete poll error:", error);
+      setMessage("Failed to delete poll");
+    }
+  };
+
+  return (
+    <div style={styles.app}>
+      {!loggedInUser ? (
+        <AuthForm />
+      ) : (
+        <div style={{ maxWidth: 800, margin: "auto" }}>
+          {/* Header */}
+          <div style={{
+            ...styles.box,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}>
+            <h2>Welcome, {loggedInUser}</h2>
+            <div>
+              <button style={{ ...styles.button, marginRight: 8 }} onClick={toggleTheme}>
+                {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+              </button>
+              <button style={styles.button} onClick={() => setLoggedInUser(null)}>
+                Logout
+              </button>
+            </div>
+          </div>
+
+          {/* Create Poll Form */}
+          <CreatePollForm onPollCreated={fetchPolls} />
+
+          {/* Polls List */}
+          <div>
+            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
+              <h3>Available Polls</h3>
+              <button 
+                style={{ ...styles.button, background: "#10b981" }}
+                onClick={fetchPolls}
+                disabled={loading}
+              >
+                {loading ? "Loading..." : "🔄 Refresh"}
+              </button>
+            </div>
+            
+            <Message message={message} />
+            
+            {loading ? (
+              <div style={{textAlign: "center", padding: "20px"}}>Loading polls...</div>
+            ) : polls.length === 0 ? (
+              <div style={{textAlign: "center", padding: "20px"}}>No polls available yet.</div>
+            ) : (
+              polls.map(poll => (
+                <PollItem 
+                  key={poll.id} 
+                  poll={poll} 
+                  onDelete={deletePoll}
+                  onVoted={handleVote}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
   );
-};
+}
 
-export default App;
+// Root App with Context Providers
+export default function RootApp() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
